@@ -64,7 +64,7 @@ export function StandaloneScanner({ open, onOpenChange, onUseGrid }: StandaloneS
 
   return (
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
-      <AlertDialogContent className="max-h-[calc(100dvh-2rem)] max-w-3xl overflow-y-auto">
+      <AlertDialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-5xl gap-4 overflow-y-auto p-3 sm:w-[calc(100%-2rem)] sm:p-5">
         <AlertDialogHeader>
           <div className="flex items-center gap-2">
             <span className="grid size-10 place-items-center rounded-xl bg-primary/12 text-primary">

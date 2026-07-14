@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { Eraser, History, MoveDiagonal2, Redo2, Sparkles, Undo2 } from "lucide-react";
 
 import { ColorPalette } from "@/components/color-palette";
@@ -51,6 +51,7 @@ const COMPRESSION_LABEL = {
 const MIN_CANVAS_SIZE = 320;
 const MAX_CANVAS_SIZE = 760;
 const DEFAULT_CANVAS_SIZE = 640;
+const MIN_USEFUL_RESIZE_RANGE = 32;
 
 function SamplePreview({ grid }: { grid: PixelGridData }) {
   return (
@@ -84,6 +85,7 @@ export function PixelStep({
   onDeleteArtwork,
 }: PixelStepProps) {
   const [canvasSize, setCanvasSize] = useState(DEFAULT_CANVAS_SIZE);
+  const [canResizeCanvas, setCanResizeCanvas] = useState(false);
   const canvasFrameRef = useRef<HTMLDivElement>(null);
   const resizeGestureRef = useRef<{
     pointerId: number;
@@ -92,11 +94,34 @@ export function PixelStep({
     startSize: number;
   } | null>(null);
 
-  const canvasBounds = () => {
-    const available = canvasFrameRef.current?.parentElement?.clientWidth ?? MAX_CANVAS_SIZE;
+  const canvasBounds = useCallback(() => {
+    const container = canvasFrameRef.current?.parentElement;
+    let available = MAX_CANVAS_SIZE;
+    if (container) {
+      const style = window.getComputedStyle(container);
+      const horizontalPadding =
+        (Number.parseFloat(style.paddingLeft) || 0) +
+        (Number.parseFloat(style.paddingRight) || 0);
+      available = Math.max(0, container.clientWidth - horizontalPadding);
+    }
     const maximum = Math.max(240, Math.min(MAX_CANVAS_SIZE, available));
     return { minimum: Math.min(MIN_CANVAS_SIZE, maximum), maximum };
-  };
+  }, []);
+
+  useEffect(() => {
+    const container = canvasFrameRef.current?.parentElement;
+    if (!container) return;
+
+    const updateResizeAvailability = () => {
+      const { minimum, maximum } = canvasBounds();
+      setCanResizeCanvas(maximum - minimum >= MIN_USEFUL_RESIZE_RANGE);
+    };
+
+    updateResizeAvailability();
+    const observer = new ResizeObserver(updateResizeAvailability);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [canvasBounds]);
 
   const updateCanvasSize = (nextSize: number) => {
     const { minimum, maximum } = canvasBounds();
@@ -191,30 +216,34 @@ export function PixelStep({
                   onCommit={onGridCommit}
                   ariaLabel="ドット絵を描く8かける8のキャンバス"
                 />
-                <button
-                  type="button"
-                  role="slider"
-                  aria-label="キャンバスの表示サイズ"
-                  aria-valuemin={MIN_CANVAS_SIZE}
-                  aria-valuemax={MAX_CANVAS_SIZE}
-                  aria-valuenow={canvasSize}
-                  title="ドラッグしてキャンバスを拡大・縮小"
-                  className="absolute -bottom-3 -right-3 z-20 grid size-11 touch-none place-items-center rounded-xl border-2 border-primary/40 bg-card text-primary shadow-lg outline-none cursor-nwse-resize focus-visible:ring-4 focus-visible:ring-ring/25"
-                  onKeyDown={resizeWithKeyboard}
-                  onLostPointerCapture={finishCanvasResize}
-                  onPointerCancel={finishCanvasResize}
-                  onPointerDown={startCanvasResize}
-                  onPointerMove={moveCanvasResize}
-                  onPointerUp={finishCanvasResize}
-                >
-                  <MoveDiagonal2 aria-hidden="true" />
-                </button>
+                {canResizeCanvas ? (
+                  <button
+                    type="button"
+                    role="slider"
+                    aria-label="キャンバスの表示サイズ"
+                    aria-valuemin={MIN_CANVAS_SIZE}
+                    aria-valuemax={MAX_CANVAS_SIZE}
+                    aria-valuenow={canvasSize}
+                    title="ドラッグしてキャンバスを拡大・縮小"
+                    className="absolute -bottom-3 -right-3 z-20 grid size-11 touch-none place-items-center rounded-xl border-2 border-primary/40 bg-card text-primary shadow-lg outline-none cursor-nwse-resize focus-visible:ring-4 focus-visible:ring-ring/25"
+                    onKeyDown={resizeWithKeyboard}
+                    onLostPointerCapture={finishCanvasResize}
+                    onPointerCancel={finishCanvasResize}
+                    onPointerDown={startCanvasResize}
+                    onPointerMove={moveCanvasResize}
+                    onPointerUp={finishCanvasResize}
+                  >
+                    <MoveDiagonal2 aria-hidden="true" />
+                  </button>
+                ) : null}
               </div>
             </div>
-            <p className="mt-2 flex items-center justify-center gap-1.5 text-xs font-bold text-muted-foreground">
-              <MoveDiagonal2 className="size-3.5" aria-hidden="true" />
-              右下のつまみをドラッグして表示サイズを変更
-            </p>
+            {canResizeCanvas ? (
+              <p className="mt-2 flex items-center justify-center gap-1.5 text-xs font-bold text-muted-foreground">
+                <MoveDiagonal2 className="size-3.5" aria-hidden="true" />
+                右下のつまみをドラッグして表示サイズを変更
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
