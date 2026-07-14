@@ -5,6 +5,7 @@ import { CheckCircle2 } from "lucide-react";
 
 import { AppHeader, type SaveStatus } from "@/components/app-header";
 import { BottomNavigation } from "@/components/bottom-navigation";
+import { CreatorCredit } from "@/components/creator-credit";
 import { StandaloneScanner } from "@/components/standalone-scanner";
 import { StepNavigation, DEFAULT_WORKSHOP_STEPS } from "@/components/step-navigation";
 import { BinaryStep } from "@/components/steps/binary-step";
@@ -580,6 +581,7 @@ export function RenDotLab() {
         className="mx-auto w-full max-w-7xl px-3 py-5 outline-none sm:px-5 sm:py-7 lg:px-8"
       >
         {renderedStep}
+        <CreatorCredit />
       </main>
 
       <BottomNavigation
