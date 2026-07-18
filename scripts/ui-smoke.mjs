@@ -148,6 +148,19 @@ try {
   await advanceStep();
   await page.getByRole("heading", { name: "ビットを読み取れる形にする" }).waitFor();
   assert.equal(await page.locator("[data-region]").count(), 625);
+  const firstKeyboardCell = page.locator('[role="gridcell"][tabindex="0"]');
+  assert.match(await firstKeyboardCell.getAttribute("data-region"), /^(header|payload)$/);
+  const firstKeyboardLabel = await firstKeyboardCell.getAttribute("aria-label");
+  await firstKeyboardCell.focus();
+  await firstKeyboardCell.press("ArrowRight");
+  assert.notEqual(
+    await page.evaluate(() => document.activeElement?.getAttribute("aria-label")),
+    firstKeyboardLabel,
+  );
+  assert.match(
+    await page.evaluate(() => document.activeElement?.getAttribute("data-region") ?? ""),
+    /^(header|payload|dummy)$/,
+  );
   const cellNumberSwitch = page.getByRole("switch", { name: "セル番号" });
   const placementSwitch = page.getByRole("switch", { name: "配置順" });
   await cellNumberSwitch.click();
@@ -185,6 +198,15 @@ try {
     /repeating-linear-gradient/,
   );
   await page.getByRole("button", { name: "斜線を隠す" }).click();
+  const dummyCell = page.locator('[data-region="dummy"]').first();
+  assert.equal(await dummyCell.isEnabled(), true);
+  const dummyLabelBefore = await dummyCell.getAttribute("aria-label");
+  await dummyCell.click();
+  assert.equal(await dummyCell.getAttribute("data-modified"), "true");
+  assert.notEqual(await dummyCell.getAttribute("aria-label"), dummyLabelBefore);
+  await page.getByRole("button", { name: "戻す", exact: true }).click();
+  assert.equal(await dummyCell.getAttribute("data-modified"), null);
+  assert.equal(await dummyCell.getAttribute("aria-label"), dummyLabelBefore);
   await page.getByRole("button", { name: "全画面" }).click();
   const fullscreenDialog = page.getByRole("dialog", { name: "QRライクデータ全画面表示" });
   await fullscreenDialog.waitFor();
@@ -237,14 +259,21 @@ try {
   await page.getByRole("button", { name: "操作を隠す", exact: true }).click();
   await page.getByRole("button", { name: "復元する" }).click();
   await page.getByRole("heading", { name: "データに誤りが見つかりました" }).waitFor();
+  await page.getByText("1個目のまとまり").waitFor();
+  await page.getByText(/個数（P1）のパリティエラー/).waitFor();
+  await page.getByText("個数エラー", { exact: true }).waitFor();
+  await page.getByText(/合計\d+マス/).waitFor();
   await page.getByRole("button", { name: "エラーを直して戻る" }).click();
 
   await advanceStep();
   await page.getByRole("button", { name: "復元する" }).click();
   await page.getByRole("heading", { name: "データに誤りが見つかりました" }).waitFor();
   await page.getByRole("button", { name: "そのまま復元してみる" }).click();
-  await page.getByRole("heading", { name: "正常に復元できませんでした" }).waitFor();
-  await page.getByRole("button", { name: "QRライクデータに戻る" }).click();
+  await page.getByRole("heading", { name: /元の画像と一致/ }).waitFor();
+  await page.getByText(/マス目は無効として復元しました/).waitFor();
+  await revealStepActions();
+  await page.getByRole("button", { name: "戻る", exact: true }).click();
+  await page.getByRole("heading", { name: "ビットを読み取れる形にする" }).waitFor();
 
   await page.getByRole("button", { name: "リセット" }).click();
   await advanceStep();

@@ -55,12 +55,39 @@ export function QrLikeGrid({
   fullscreenSize,
 }: QrLikeGridProps) {
   const displayGrid = showGrid && !fullscreen;
+  const cellButtons = React.useRef(new Map<number, HTMLButtonElement>());
   const modified = React.useMemo(() => new Set(modifiedIndices), [modifiedIndices]);
   const cells = React.useMemo(
     () => Array.from({ length: data.displayBits.length }, (_, index) => getQrLikeCellInfo(data, index)),
     [data],
   );
-  const firstEditableIndex = cells.find((cell) => cell.region === "header" || cell.region === "payload")?.index;
+  const firstEditableIndex =
+    cells.find((cell) => cell.region === "header" || cell.region === "payload")?.index ??
+    cells.find((cell) => cell.region === "dummy")?.index;
+
+  const moveFocus = (event: React.KeyboardEvent<HTMLButtonElement>, cell: QrLikeCellInfo) => {
+    const direction = {
+      ArrowUp: { row: -1, column: 0 },
+      ArrowDown: { row: 1, column: 0 },
+      ArrowLeft: { row: 0, column: -1 },
+      ArrowRight: { row: 0, column: 1 },
+    }[event.key];
+    if (!direction) return;
+
+    event.preventDefault();
+    let row = cell.row + direction.row;
+    let column = cell.column + direction.column;
+    while (row >= 0 && row < data.height && column >= 0 && column < data.width) {
+      const targetIndex = row * data.width + column;
+      const target = cells[targetIndex];
+      if (target.region !== "marker" && target.region !== "timing") {
+        cellButtons.current.get(targetIndex)?.focus();
+        return;
+      }
+      row += direction.row;
+      column += direction.column;
+    }
+  };
 
   return (
     <figure
@@ -74,7 +101,7 @@ export function QrLikeGrid({
         style={{ gridTemplateColumns: `repeat(${data.width}, minmax(0, 1fr))` }}
       >
         {cells.map((cell) => {
-          const editable = cell.region === "header" || cell.region === "payload";
+          const editable = cell.region !== "marker" && cell.region !== "timing";
           const lengthHighlighted = highlightLengthCells && cell.region === "payload" && cell.block === "length";
           const parityHighlighted = highlightParityCells && cell.region === "payload" && cell.bitRole === "parity";
           const label = cell.region === "marker"
@@ -97,9 +124,14 @@ export function QrLikeGrid({
               aria-selected={selectedIndex === cell.index}
               disabled={!editable || !onCellClick}
               tabIndex={editable && onCellClick && (selectedIndex === cell.index || selectedIndex === null && cell.index === firstEditableIndex) ? 0 : -1}
+              ref={(element) => {
+                if (element) cellButtons.current.set(cell.index, element);
+                else cellButtons.current.delete(cell.index);
+              }}
               title={label}
               onClick={() => onCellClick?.(cell.index, cell)}
               onFocus={() => onCellFocus?.(cell.index, cell)}
+              onKeyDown={(event) => moveFocus(event, cell)}
               className={cn(
                 "relative min-w-0 overflow-hidden p-0 outline-none",
                 cell.bit === 1 ? "bg-black text-white" : "bg-white text-black",

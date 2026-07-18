@@ -134,7 +134,7 @@ export function RenDotLab() {
     qrFlipHistory.forEach((index) => {
       try {
         const region = getQrLikeCellInfo(baseQrData, index).region;
-        if (region !== "header" && region !== "payload") return;
+        if (region === "marker" || region === "timing") return;
       } catch {
         return;
       }

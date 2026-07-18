@@ -11,28 +11,69 @@ import type { PixelGrid, QrLikeData, RunLengthEntry } from "./types";
 
 export type DecodeQrLikeOptions = DecodeEntryOptions;
 
+export type RestorePixelGridOptions = DecodeQrLikeOptions & {
+  /** Keep the first 64 decoded pixels when damaged length bits produce extras. */
+  truncateOverflow?: boolean;
+};
+
+function decodeQrLikeEntries(
+  data: QrLikeData,
+  options: DecodeQrLikeOptions,
+): RunLengthEntry[] {
+  const parsed = parseQrLikeData(data);
+  return parsed.entryBits.map((bits) => decodeEntry(bits, options));
+}
+
+function expandEntries(entries: RunLengthEntry[]): PixelGrid[number] {
+  return entries.flatMap((entry) =>
+    Array.from({ length: entry.length }, () => entry.color),
+  );
+}
+
+function requireExactPixelCount(entries: RunLengthEntry[]): void {
+  const actual = entries.reduce((total, entry) => total + entry.length, 0);
+  if (actual !== PIXEL_COUNT) {
+    throw new DataValidationError(
+      "INVALID_PIXEL_COUNT",
+      `Decoded QR-like data contains ${actual} pixels instead of ${PIXEL_COUNT}.`,
+      { actual, expected: PIXEL_COUNT },
+    );
+  }
+}
+
 export function decodeQrLikeData(
   data: QrLikeData,
   options: DecodeQrLikeOptions = {},
 ): RunLengthEntry[] {
-  const parsed = parseQrLikeData(data);
-  const entries = parsed.entryBits.map((bits) => decodeEntry(bits, options));
-  const pixels = decodeRunLength(entries);
-  if (pixels.length !== PIXEL_COUNT) {
-    throw new DataValidationError(
-      "INVALID_PIXEL_COUNT",
-      `Decoded QR-like data contains ${pixels.length} pixels instead of ${PIXEL_COUNT}.`,
-      { actual: pixels.length, expected: PIXEL_COUNT },
-    );
-  }
+  const entries = decodeQrLikeEntries(data, options);
+  requireExactPixelCount(entries);
+  decodeRunLength(entries);
   return entries;
 }
 
 export function restorePixelGrid(
   data: QrLikeData,
-  options: DecodeQrLikeOptions = {},
+  options: RestorePixelGridOptions = {},
 ): PixelGrid {
-  return pixelsToGrid(decodeRunLength(decodeQrLikeData(data, options)));
+  const entries = decodeQrLikeEntries(data, options);
+  if (!options.truncateOverflow) {
+    requireExactPixelCount(entries);
+    return pixelsToGrid(decodeRunLength(entries));
+  }
+
+  const pixels = expandEntries(entries);
+  if (pixels.length < PIXEL_COUNT) {
+    throw new DataValidationError(
+      "INVALID_PIXEL_COUNT",
+      `Decoded QR-like data contains only ${pixels.length} pixels instead of ${PIXEL_COUNT}.`,
+      {
+        actual: pixels.length,
+        expected: PIXEL_COUNT,
+        missing: PIXEL_COUNT - pixels.length,
+      },
+    );
+  }
+  return pixelsToGrid(pixels.slice(0, PIXEL_COUNT));
 }
 
 export function gridsAreEqual(left: PixelGrid, right: PixelGrid): boolean {

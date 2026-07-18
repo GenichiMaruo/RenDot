@@ -1,4 +1,4 @@
-import { assertBinaryString, toFixedBinary } from "./binary";
+import { assertBinaryString, decodeLength, toFixedBinary } from "./binary";
 import { DataValidationError } from "./errors";
 import { encodeEntry, ENCODED_ENTRY_BIT_COUNT, inspectEncodedEntry } from "./parity";
 import { assertRunLengthTotal, PIXEL_COUNT } from "./runLength";
@@ -36,6 +36,11 @@ export type QrLikeInspection = ParsedQrLikeData & {
   entries: EncodedEntryInspection[];
   isParityValid: boolean;
   invalidEntryIndices: number[];
+  parityIssues: Array<{
+    entryIndex: number;
+    block: ParityBlockKey;
+  }>;
+  decodedPixelCount: number;
 };
 
 export function calculateCrc8(bits: string): number {
@@ -230,7 +235,21 @@ export function inspectQrLikeData(data: QrLikeData): QrLikeInspection {
   const parsed = parseQrLikeData(data);
   const entries = parsed.entryBits.map(inspectEncodedEntry);
   const invalidEntryIndices = entries.flatMap((entry, index) => (entry.isValid ? [] : [index]));
-  return { ...parsed, entries, isParityValid: invalidEntryIndices.length === 0, invalidEntryIndices };
+  const parityIssues = entries.flatMap((entry, entryIndex) =>
+    entry.invalidBlocks.map((block) => ({ entryIndex, block })),
+  );
+  const decodedPixelCount = entries.reduce(
+    (total, entry) => total + decodeLength(entry.entry.length.dataBits),
+    0,
+  );
+  return {
+    ...parsed,
+    entries,
+    isParityValid: parityIssues.length === 0,
+    invalidEntryIndices,
+    parityIssues,
+    decodedPixelCount,
+  };
 }
 
 function getPayloadBitDetails(entryBitIndex: number): {
@@ -293,7 +312,7 @@ export function getQrLikeCellInfo(data: QrLikeData, index: number): QrLikeCellIn
 
 export function flipQrLikeBit(data: QrLikeData, index: number): QrLikeData {
   const cell = getQrLikeCellInfo(data, index);
-  if (cell.region !== "header" && cell.region !== "payload") {
+  if (cell.region === "marker" || cell.region === "timing") {
     throw new DataValidationError("VALUE_OUT_OF_RANGE", "Marker and timing cells cannot be flipped.");
   }
   const placementIndex = PLACEMENT_INDEX.get(index)!;

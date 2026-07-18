@@ -296,8 +296,20 @@ describe("QR-like format", () => {
     expect(inspectQrLikeData(corrupted)).toMatchObject({
       isParityValid: false,
       invalidEntryIndices: [0],
+      parityIssues: [{ entryIndex: 0, block: "color" }],
     });
     expect(flipQrLikeBit(corrupted, index)).toEqual(original);
+  });
+
+  it("reports every damaged run and whether its length or color parity failed", () => {
+    const original = buildQrLikeData(sourceEntries);
+    const damagedLength = flipQrLikeBit(original, payloadCell(0));
+    const damagedLengthAndColor = flipQrLikeBit(damagedLength, payloadCell(2 * 8 + 4));
+
+    expect(inspectQrLikeData(damagedLengthAndColor).parityIssues).toEqual([
+      { entryIndex: 0, block: "length" },
+      { entryIndex: 2, block: "color" },
+    ]);
   });
 
   it("fills a 25 x 25 matrix with no unused cells", () => {
@@ -321,6 +333,82 @@ describe("QR-like format", () => {
       expect(cell.payloadIndex).toBeGreaterThanOrEqual(64);
       expect(cell.placementNumber).toBe((cell.payloadIndex ?? 0) + 41);
     }
+  });
+
+  it("lets a dummy cell be flipped without changing parity or the restored image", () => {
+    const entries = Array.from({ length: 8 }, () => ({ length: 8, color: 0 as ColorId }));
+    const original = buildQrLikeData(entries);
+    const dummyIndex = payloadCell(64);
+    const originalCell = getQrLikeCellInfo(original, dummyIndex);
+
+    expect(originalCell.region).toBe("dummy");
+    const flipped = flipQrLikeBit(original, dummyIndex);
+    expect(getQrLikeCellInfo(flipped, dummyIndex)).toMatchObject({
+      region: "dummy",
+      bit: originalCell.bit === 1 ? 0 : 1,
+    });
+    expect(flipped.payloadBits[64]).not.toBe(original.payloadBits[64]);
+    expect(inspectQrLikeData(flipped)).toMatchObject({
+      isParityValid: true,
+      decodedPixelCount: 64,
+    });
+    expect(restorePixelGrid(flipped)).toEqual(
+      Array.from({ length: 8 }, () => Array<ColorId>(8).fill(0)),
+    );
+    expect(flipQrLikeBit(flipped, dummyIndex)).toEqual(original);
+  });
+
+  it("force-restores the first 64 pixels and discards length-bit overflow", () => {
+    const entries = encodeRunLength(alternatingPixels());
+    const original = buildQrLikeData(entries);
+    const corrupted = flipQrLikeBit(original, payloadCell(0));
+    const inspection = inspectQrLikeData(corrupted);
+
+    expect(inspection).toMatchObject({
+      decodedPixelCount: 68,
+      parityIssues: [{ entryIndex: 0, block: "length" }],
+    });
+    expect(() => restorePixelGrid(corrupted, { validateParity: false })).toThrow();
+
+    const restored = restorePixelGrid(corrupted, {
+      validateParity: false,
+      truncateOverflow: true,
+    });
+    expect(flattenGrid(restored)).toEqual([
+      ...Array<ColorId>(5).fill(0),
+      ...alternatingPixels().slice(1, 60),
+    ]);
+  });
+
+  it("detects and truncates overflow even when two changed length bits pass parity", () => {
+    const original = buildQrLikeData(encodeRunLength(alternatingPixels()));
+    const firstFlip = flipQrLikeBit(original, payloadCell(0));
+    const corrupted = flipQrLikeBit(firstFlip, payloadCell(1));
+    const inspection = inspectQrLikeData(corrupted);
+
+    expect(inspection).toMatchObject({
+      isParityValid: true,
+      parityIssues: [],
+      decodedPixelCount: 70,
+    });
+    expect(() => restorePixelGrid(corrupted)).toThrow();
+    expect(
+      flattenGrid(restorePixelGrid(corrupted, { truncateOverflow: true })),
+    ).toHaveLength(64);
+  });
+
+  it("keeps a decoded pixel shortage as an error during forced restoration", () => {
+    const entries = Array.from({ length: 8 }, () => ({ length: 8, color: 0 as ColorId }));
+    const original = buildQrLikeData(entries);
+    const corrupted = flipQrLikeBit(original, payloadCell(0));
+
+    expect(inspectQrLikeData(corrupted).decodedPixelCount).toBe(60);
+    expect(() =>
+      restorePixelGrid(corrupted, {
+        validateParity: false,
+        truncateOverflow: true,
+      }),
+    ).toThrow();
   });
 
   it("rebuilds data from the fixed sampled matrix", () => {

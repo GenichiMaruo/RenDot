@@ -22,6 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   gridsAreEqual,
   inspectQrLikeData,
+  PIXEL_COUNT,
   restorePixelGrid,
   toUserMessage,
   type PixelGrid as PixelGridData,
@@ -38,6 +39,14 @@ type RestoreStepProps = {
 
 type RestoreStatus = "idle" | "running" | "needs-choice" | "success" | "failure";
 
+type RestoreDiagnostics = {
+  parityIssues: Array<{
+    entryIndex: number;
+    block: "length" | "color";
+  }>;
+  decodedPixelCount: number;
+};
+
 const PHASES = [
   { label: "ヘッダーを読んでいます", icon: ScanLine },
   { label: "パリティを確認しています", icon: ShieldCheck },
@@ -49,18 +58,62 @@ function wait(ms: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 }
 
+function RestoreDiagnosticsPanel({
+  diagnostics,
+  overflowWasDiscarded = false,
+}: {
+  diagnostics: RestoreDiagnostics;
+  overflowWasDiscarded?: boolean;
+}) {
+  const overflow = Math.max(0, diagnostics.decodedPixelCount - PIXEL_COUNT);
+  const missing = Math.max(0, PIXEL_COUNT - diagnostics.decodedPixelCount);
+  if (diagnostics.parityIssues.length === 0 && overflow === 0 && missing === 0) return null;
+
+  return (
+    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/8 p-4" role="status">
+      <p className="font-black text-amber-800 dark:text-amber-200">検出したエラーの詳細</p>
+      <ul className="mt-2 grid gap-2 text-sm leading-6">
+        {diagnostics.parityIssues.map((issue) => (
+          <li key={`${issue.entryIndex}-${issue.block}`} className="rounded-xl bg-background/75 px-3 py-2">
+            <b>{issue.entryIndex + 1}個目のまとまり</b>
+            ：{issue.block === "length" ? "個数（P1）" : "色（P2）"}のパリティエラー
+          </li>
+        ))}
+        {overflow > 0 ? (
+          <li className="rounded-xl bg-background/75 px-3 py-2">
+            <b>個数エラー</b>
+            ：合計{diagnostics.decodedPixelCount}マスで、{overflow}マス長くなっています。
+            {overflowWasDiscarded ? (
+              <> {PIXEL_COUNT + 1}〜{diagnostics.decodedPixelCount}マス目は無効として復元しました。</>
+            ) : (
+              <> 強制復元では{PIXEL_COUNT + 1}〜{diagnostics.decodedPixelCount}マス目を無効にします。</>
+            )}
+          </li>
+        ) : null}
+        {missing > 0 ? (
+          <li className="rounded-xl bg-background/75 px-3 py-2">
+            <b>個数エラー</b>
+            ：合計{diagnostics.decodedPixelCount}マスで、{missing}マス不足しています。8×8に復元できません。
+          </li>
+        ) : null}
+      </ul>
+    </div>
+  );
+}
+
 export function RestoreStep({ originalGrid, data, onReturnToFix, onCompletionChange }: RestoreStepProps) {
   const [status, setStatus] = useState<RestoreStatus>("idle");
   const [phaseIndex, setPhaseIndex] = useState(-1);
   const [restoredGrid, setRestoredGrid] = useState<PixelGridData | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [hadParityError, setHadParityError] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<RestoreDiagnostics | null>(null);
 
-  const runRestore = async (ignoreParity = false) => {
+  const runRestore = async (forceRestore = false) => {
     onCompletionChange(false);
     setStatus("running");
     setRestoredGrid(null);
     setErrorMessage(null);
+    setDiagnostics(null);
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const delay = reduceMotion ? 40 : 360;
 
@@ -68,19 +121,27 @@ export function RestoreStep({ originalGrid, data, onReturnToFix, onCompletionCha
       setPhaseIndex(0);
       await wait(delay);
       const inspection = inspectQrLikeData(data);
+      const nextDiagnostics: RestoreDiagnostics = {
+        parityIssues: inspection.parityIssues,
+        decodedPixelCount: inspection.decodedPixelCount,
+      };
+      setDiagnostics(nextDiagnostics);
 
       setPhaseIndex(1);
       await wait(delay);
       const hasParityError = !inspection.isParityValid;
-      setHadParityError(hasParityError);
-      if (hasParityError && !ignoreParity) {
+      const hasOverflow = inspection.decodedPixelCount > PIXEL_COUNT;
+      if ((hasParityError || hasOverflow) && !forceRestore) {
         setStatus("needs-choice");
         return;
       }
 
       setPhaseIndex(2);
       await wait(delay);
-      const grid = restorePixelGrid(data, { validateParity: !ignoreParity });
+      const grid = restorePixelGrid(data, {
+        validateParity: !forceRestore,
+        truncateOverflow: forceRestore,
+      });
 
       setPhaseIndex(3);
       await wait(delay);
@@ -177,10 +238,13 @@ export function RestoreStep({ originalGrid, data, onReturnToFix, onCompletionCha
               <div>
                 <h2 className="text-xl font-black">データに誤りが見つかりました</h2>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  このまま復元すると画像が崩れる可能性があります。パリティは誤りを見つけますが、勝手には直しません。
+                  {diagnostics?.parityIssues.length
+                    ? "このまま復元すると画像が崩れる可能性があります。パリティは誤りを見つけますが、勝手には直しません。"
+                    : "個数の合計が64マスを超えています。余ったマスを無効にすれば、8×8として強制復元できます。"}
                 </p>
               </div>
             </div>
+            {diagnostics ? <RestoreDiagnosticsPanel diagnostics={diagnostics} /> : null}
             <div className="grid gap-2 sm:grid-cols-2">
               <Button variant="secondary" onClick={onReturnToFix}>
                 <RotateCcw aria-hidden="true" />
@@ -209,9 +273,10 @@ export function RestoreStep({ originalGrid, data, onReturnToFix, onCompletionCha
                 </p>
               </div>
             </div>
+            {diagnostics ? <RestoreDiagnosticsPanel diagnostics={diagnostics} /> : null}
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" onClick={onReturnToFix}>QRライクデータに戻る</Button>
-              <Button variant="ghost" onClick={() => { setStatus("idle"); setPhaseIndex(-1); }}>もう一度ためす</Button>
+              <Button variant="ghost" onClick={() => { setStatus("idle"); setPhaseIndex(-1); setDiagnostics(null); }}>もう一度ためす</Button>
             </div>
           </CardContent>
         </Card>
@@ -232,11 +297,18 @@ export function RestoreStep({ originalGrid, data, onReturnToFix, onCompletionCha
                   {matches
                     ? "数字になっても、決めたルールを逆にたどれば絵へ戻せます。"
                     : "反転したbitが色や個数を変えたため、絵が崩れています。"}
-                  {hadParityError && matches ? " 今回は誤りが絵の形に影響しない場所でした。" : ""}
+                  {diagnostics?.parityIssues.length && matches ? " 今回は誤りが絵の形に影響しない場所でした。" : ""}
                 </p>
               </div>
             </CardContent>
           </Card>
+
+          {diagnostics ? (
+            <RestoreDiagnosticsPanel
+              diagnostics={diagnostics}
+              overflowWasDiscarded={diagnostics.decodedPixelCount > PIXEL_COUNT}
+            />
+          ) : null}
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
@@ -258,7 +330,7 @@ export function RestoreStep({ originalGrid, data, onReturnToFix, onCompletionCha
           </div>
 
           <div className="flex justify-center">
-            <Button variant="secondary" onClick={() => { onCompletionChange(false); setStatus("idle"); setPhaseIndex(-1); setRestoredGrid(null); }}>
+            <Button variant="secondary" onClick={() => { onCompletionChange(false); setStatus("idle"); setPhaseIndex(-1); setRestoredGrid(null); setDiagnostics(null); }}>
               <RotateCcw aria-hidden="true" />
               もう一度復元する
             </Button>
