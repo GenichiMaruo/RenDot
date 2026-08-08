@@ -7,13 +7,18 @@ import {
   pixelsToGrid,
   validateGrid,
 } from "./runLength";
-import type { PixelGrid, QrLikeData, RunLengthEntry } from "./types";
+import type { ColorMode, PixelGrid, QrLikeData, RunLengthEntry } from "./types";
 
 export type DecodeQrLikeOptions = DecodeEntryOptions;
 
 export type RestorePixelGridOptions = DecodeQrLikeOptions & {
   /** Keep the first 64 decoded pixels when damaged length bits produce extras. */
   truncateOverflow?: boolean;
+};
+
+export type RestoredQrLikeArtwork = {
+  grid: PixelGrid;
+  colorMode: ColorMode;
 };
 
 function decodeQrLikeEntries(
@@ -74,6 +79,18 @@ export function restorePixelGrid(
     );
   }
   return pixelsToGrid(pixels.slice(0, PIXEL_COUNT));
+}
+
+/** Restores both the color-number grid and the palette carried by its header. */
+export function restoreQrLikeArtwork(
+  data: QrLikeData,
+  options: RestorePixelGridOptions = {},
+): RestoredQrLikeArtwork {
+  const colorMode = parseQrLikeData(data).header.colorMode;
+  return {
+    grid: restorePixelGrid(data, options),
+    colorMode,
+  };
 }
 
 export function gridsAreEqual(left: PixelGrid, right: PixelGrid): boolean {

@@ -26,6 +26,7 @@ import {
   toBinaryRunLengthEntry,
 } from "@/lib";
 import type {
+  ColorMode,
   EncodedEntryInspection,
   ParityBlock as ParityBlockData,
   ParityBlockKey,
@@ -34,6 +35,7 @@ import type {
 
 export type ParityStepProps = {
   entries: RunLengthEntry[];
+  colorMode: ColorMode;
   selectedRunIndex: number;
   onSelectRun: (index: number) => void;
   demoBits: string | null;
@@ -156,6 +158,7 @@ function getSafeInspection(
 
 export function ParityStep({
   entries,
+  colorMode,
   selectedRunIndex,
   onSelectRun,
   demoBits,
@@ -183,7 +186,7 @@ export function ParityStep({
   const selectedEntry = entries[safeIndex];
   const encoded = encodeEntry(selectedEntry);
   const binary = toBinaryRunLengthEntry(selectedEntry);
-  const color = getColor(selectedEntry.color);
+  const color = getColor(selectedEntry.color, colorMode);
   const inspection = getSafeInspection(encoded.bits, demoBits);
 
   if (!inspection) {
@@ -229,7 +232,7 @@ export function ParityStep({
         <CardContent>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
             {entries.map((entry, index) => {
-              const itemColor = getColor(entry.color);
+              const itemColor = getColor(entry.color, colorMode);
               const isSelected = safeIndex === index;
               return (
                 <button

@@ -1,10 +1,15 @@
 export type ColorId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
+export type ColorMode = "colorful" | "grayscale" | "ocean" | "sunset";
+
+export type ColorModeCode = 0 | 1 | 2 | 3;
+
 export type PixelGrid = ColorId[][];
 
 export type SavedArtwork = {
   id: string;
   grid: PixelGrid;
+  colorMode: ColorMode;
   savedAt: number;
 };
 
@@ -34,8 +39,14 @@ export type EncodedRunLengthEntry = {
 
 export type QrLikeHeader = {
   magicBits: string;
+  colorMode: ColorMode;
+  colorModeCode: ColorModeCode;
+  colorModeBits: string;
   runCount: number;
   storedRunCount: number;
+  /** The 10-bit field value. Its lowest two otherwise-unused bits store colorMode. */
+  packedPayloadLength: number;
+  /** Actual number of payload bits, always a multiple of eight. */
   payloadLength: number;
   checksum: number;
   checksumBits: string;

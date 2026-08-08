@@ -47,6 +47,16 @@ try {
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "ドット絵を描く" }).waitFor();
   assert.equal(await page.locator("[data-pixel-index]").count(), 64);
+  await page.waitForTimeout(300);
+  let grayscaleMode = page.getByRole("button", { name: /モノクロ。白から黒までの8段階/ });
+  await grayscaleMode.click();
+  assert.equal(await grayscaleMode.getAttribute("aria-pressed"), "true");
+  await page.getByRole("button", { name: /色番号2、灰色 2/ }).waitFor();
+  await page.waitForTimeout(250);
+  await page.reload({ waitUntil: "networkidle" });
+  grayscaleMode = page.getByRole("button", { name: /モノクロ。白から黒までの8段階/ });
+  assert.equal(await grayscaleMode.getAttribute("aria-pressed"), "true");
+  await page.getByRole("button", { name: /カラフル。これまでと同じ基本の8色/ }).click();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   const resizableCanvas = page.locator('[data-resizable-canvas="true"]');
   const initialCanvasBox = await resizableCanvas.boundingBox();
@@ -80,6 +90,10 @@ try {
   assert.equal(
     await page.evaluate(() => JSON.parse(window.localStorage.getItem("rendot:artworks:v1")).artworks.length),
     1,
+  );
+  assert.equal(
+    await page.evaluate(() => JSON.parse(window.localStorage.getItem("rendot:artworks:v1")).artworks[0].colorMode),
+    "colorful",
   );
 
   await page.getByRole("button", { name: /色番号0、白/ }).click();

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { Eraser, History, MoveDiagonal2, Redo2, Sparkles, Undo2 } from "lucide-react";
 
-import { ColorPalette } from "@/components/color-palette";
+import { ColorModeSelector, ColorPalette } from "@/components/color-palette";
 import { PixelGrid, type PixelGridCommit } from "@/components/pixel-grid";
 import { SavedArtworkGallery } from "@/components/saved-artwork-gallery";
 import { StepHeading } from "@/components/step-heading";
@@ -21,12 +21,22 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { COLORS, type ColorId, type PixelGrid as PixelGridData, type SavedArtwork, SAMPLES } from "@/lib";
+import {
+  getColor,
+  getColorModeDefinition,
+  type ColorId,
+  type ColorMode,
+  type PixelGrid as PixelGridData,
+  type SavedArtwork,
+  SAMPLES,
+} from "@/lib";
 import { cn } from "@/lib/utils";
 
 type PixelStepProps = {
   grid: PixelGridData;
+  colorMode: ColorMode;
   selectedColor: ColorId;
+  onColorModeChange: (mode: ColorMode) => void;
   onSelectedColorChange: (color: ColorId) => void;
   onGridCommit: (commit: PixelGridCommit) => void;
   onUndo: () => void;
@@ -53,14 +63,14 @@ const MAX_CANVAS_SIZE = 760;
 const DEFAULT_CANVAS_SIZE = 640;
 const MIN_USEFUL_RESIZE_RANGE = 32;
 
-function SamplePreview({ grid }: { grid: PixelGridData }) {
+function SamplePreview({ grid, colorMode }: { grid: PixelGridData; colorMode: ColorMode }) {
   return (
     <div className="grid aspect-square w-16 shrink-0 grid-cols-8 overflow-hidden rounded-lg border border-border bg-white shadow-sm sm:w-[4.5rem]">
       {grid.flat().map((color, index) => (
         <span
           key={index}
           aria-hidden="true"
-          style={{ backgroundColor: COLORS[color].hex }}
+          style={{ backgroundColor: getColor(color, colorMode).hex }}
         />
       ))}
     </div>
@@ -69,7 +79,9 @@ function SamplePreview({ grid }: { grid: PixelGridData }) {
 
 export function PixelStep({
   grid,
+  colorMode,
   selectedColor,
+  onColorModeChange,
   onSelectedColorChange,
   onGridCommit,
   onUndo,
@@ -93,6 +105,8 @@ export function PixelStep({
     startY: number;
     startSize: number;
   } | null>(null);
+  const selectedColorDefinition = getColor(selectedColor, colorMode);
+  const colorModeDefinition = getColorModeDefinition(colorMode);
 
   const canvasBounds = useCallback(() => {
     const container = canvasFrameRef.current?.parentElement;
@@ -196,10 +210,10 @@ export function PixelStep({
             <div className="flex items-center gap-2 rounded-xl bg-secondary px-3 py-2 text-sm font-bold">
               <span
                 className="size-4 rounded-sm border border-black/15 dark:border-white/30"
-                style={{ backgroundColor: COLORS[selectedColor].hex }}
+                style={{ backgroundColor: selectedColorDefinition.hex }}
                 aria-hidden="true"
               />
-              {selectedColor}・{COLORS[selectedColor].name}
+              {selectedColor}・{selectedColorDefinition.name}
             </div>
           </CardHeader>
           <CardContent>
@@ -212,6 +226,7 @@ export function PixelStep({
               >
                 <PixelGrid
                   grid={grid}
+                  colorMode={colorMode}
                   selectedColor={selectedColor}
                   onCommit={onGridCommit}
                   ariaLabel="ドット絵を描く8かける8のキャンバス"
@@ -250,10 +265,23 @@ export function PixelStep({
         <div className="grid gap-4">
           <Card>
             <CardHeader className="pb-4">
-              <CardTitle>8色のパレット</CardTitle>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle>カラーモードと8色</CardTitle>
+                <Badge variant="secondary">{colorModeDefinition.name}</Badge>
+              </div>
             </CardHeader>
-            <CardContent>
-              <ColorPalette value={selectedColor} onValueChange={onSelectedColorChange} />
+            <CardContent className="space-y-4">
+              <ColorModeSelector value={colorMode} onValueChange={onColorModeChange} />
+              <div className="border-t border-border/70 pt-4">
+                <ColorPalette
+                  value={selectedColor}
+                  colorMode={colorMode}
+                  onValueChange={onSelectedColorChange}
+                />
+              </div>
+              <p className="rounded-xl bg-secondary/70 px-3 py-2 text-xs font-bold leading-5 text-muted-foreground">
+                モードを変えても色番号は0〜7のままです。見え方だけが入れかわります。
+              </p>
             </CardContent>
           </Card>
 
@@ -329,7 +357,7 @@ export function PixelStep({
                   )}
                   aria-label={`${sample.name}のサンプルを読み込む。${sample.description}`}
                 >
-                  <SamplePreview grid={sample.grid} />
+                  <SamplePreview grid={sample.grid} colorMode={colorMode} />
                   <span className="min-w-0">
                     <span className="block font-extrabold">{sample.name}</span>
                     <Badge variant={label.variant} className="my-1.5">

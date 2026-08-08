@@ -33,7 +33,7 @@ export const SAMPLE_PATTERNS: readonly SamplePattern[] = [
   {
     id: "smile",
     name: "笑顔",
-    description: "黄色と黒でできた笑顔です。",
+    description: "目と口のある笑顔です。",
     compression: "medium",
     grid: gridFromRows([
       "00444400",
@@ -65,7 +65,7 @@ export const SAMPLE_PATTERNS: readonly SamplePattern[] = [
   {
     id: "tree",
     name: "木",
-    description: "緑の葉とオレンジの幹の木です。",
+    description: "葉と幹がまとまった木です。",
     compression: "easy",
     grid: gridFromRows([
       "00055000",
@@ -81,7 +81,7 @@ export const SAMPLE_PATTERNS: readonly SamplePattern[] = [
   {
     id: "fish",
     name: "魚",
-    description: "青い魚が右を向いています。",
+    description: "右を向いた魚です。",
     compression: "medium",
     grid: gridFromRows([
       "00000000",
@@ -113,7 +113,7 @@ export const SAMPLE_PATTERNS: readonly SamplePattern[] = [
   {
     id: "noise",
     name: "カラーノイズ",
-    description: "色がばらばらで、とても圧縮しにくい絵です。",
+    description: "色番号がばらばらで、とても圧縮しにくい絵です。",
     compression: "hard",
     grid: gridFromRows([
       "01234567",

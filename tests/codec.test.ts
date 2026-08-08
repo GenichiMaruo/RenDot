@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildQrLikeHeader,
   buildQrLikeData,
   calculateEvenParity,
+  COLOR_MODES,
   decodeEntry,
   decodeLength,
   decodeQrLikeData,
@@ -18,11 +20,13 @@ import {
   getQrLikePlacementOrder,
   inspectEncodedEntry,
   inspectQrLikeData,
+  parseQrLikeHeader,
   qrLikeDataFromDisplayBits,
   QR_LIKE_DEFAULT_WIDTH,
   QR_LIKE_HEADER_LENGTH,
   QR_LIKE_HEIGHT,
   restorePixelGrid,
+  restoreQrLikeArtwork,
   scanQrLikeImage,
   SAMPLE_PATTERNS,
 } from "../src/lib";
@@ -251,6 +255,60 @@ describe("QR-like format", () => {
     .grid;
   const sourceEntries = encodeRunLength(flattenGrid(sourceGrid));
 
+  it("keeps the original header bit-for-bit and reads it as colorful", () => {
+    const legacyHeader = "0101001001000100000111000100000010010001";
+    const parsed = parseQrLikeHeader(legacyHeader);
+
+    expect(buildQrLikeHeader(8, 64).bits).toBe(legacyHeader);
+    expect(parsed).toMatchObject({
+      colorMode: "colorful",
+      colorModeCode: 0,
+      colorModeBits: "00",
+      packedPayloadLength: 64,
+      payloadLength: 64,
+      runCount: 8,
+    });
+  });
+
+  it.each(COLOR_MODES)("round-trips the $name color mode in two spare header bits", (mode) => {
+    const header = buildQrLikeHeader(8, 64, { colorMode: mode.id });
+    const parsed = parseQrLikeHeader(header.bits);
+
+    expect(header.packedPayloadLength).toBe(64 | mode.code);
+    expect(header.colorModeBits).toBe(mode.bits);
+    expect(parsed).toMatchObject({
+      colorMode: mode.id,
+      colorModeCode: mode.code,
+      colorModeBits: mode.bits,
+      payloadLength: 64,
+      packedPayloadLength: 64 | mode.code,
+    });
+  });
+
+  it.each(COLOR_MODES)("restores the same grid with the $name palette attached", (mode) => {
+    const data = buildQrLikeData(sourceEntries, { colorMode: mode.id });
+
+    expect(restoreQrLikeArtwork(data)).toEqual({
+      grid: sourceGrid,
+      colorMode: mode.id,
+    });
+    expect(inspectQrLikeData(qrLikeDataFromDisplayBits(data.displayBits)).header.colorMode)
+      .toBe(mode.id);
+  });
+
+  it("keeps the color mode at the full 512-bit payload capacity", () => {
+    const entries = encodeRunLength(alternatingPixels());
+    const data = buildQrLikeData(entries, { colorMode: "sunset" });
+
+    expect(inspectQrLikeData(data).header).toMatchObject({
+      colorMode: "sunset",
+      packedPayloadLength: 515,
+      payloadLength: 512,
+      runCount: 64,
+    });
+    expect(decodeQrLikeData(data)).toEqual(entries);
+  });
+
   it("round-trips run-length entries through QR-like data", () => {
     const data = buildQrLikeData(sourceEntries);
     expect(decodeQrLikeData(data)).toEqual(sourceEntries);
@@ -265,6 +323,11 @@ describe("QR-like format", () => {
     const data = buildQrLikeData(sourceEntries);
     const corrupted = flipQrLikeBit(data, headerCell(0));
     expect(() => decodeQrLikeData(corrupted)).toThrow();
+  });
+
+  it("detects a changed color-mode bit through the header CRC", () => {
+    const data = buildQrLikeData(sourceEntries, { colorMode: "grayscale" });
+    expect(() => decodeQrLikeData(flipQrLikeBit(data, headerCell(30)))).toThrow();
   });
 
   it.each([
@@ -430,6 +493,16 @@ describe("QR-like format", () => {
     expect(scanQrLikeImage(renderTransformedQr(original, matrix, brightness, markerSeams))).toEqual(original);
   });
 
+  it.each(COLOR_MODES)("camera scanner preserves the $name color mode", (mode) => {
+    const original = buildQrLikeData(sourceEntries, { colorMode: mode.id });
+    const scanned = scanQrLikeImage(
+      renderTransformedQr(original, [8, 0, 30, 0, 8, 30, 0, 0, 1]),
+    );
+
+    expect(scanned).toEqual(original);
+    expect(inspectQrLikeData(scanned).header.colorMode).toBe(mode.id);
+  });
+
   it("selects the real four corners when larger UI-colored shapes are present", () => {
     const original = buildQrLikeData(sourceEntries);
     const frame = addColoredDistractors(
@@ -465,6 +538,33 @@ describe("QR-like format", () => {
         },
       });
     }
+  });
+});
+
+describe("color modes", () => {
+  it("provides four fixed palettes with every color id exactly once", () => {
+    expect(COLOR_MODES.map((mode) => mode.code)).toEqual([0, 1, 2, 3]);
+    for (const mode of COLOR_MODES) {
+      expect(mode.colors).toHaveLength(8);
+      expect(mode.colors.map((color) => color.id)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+      expect(new Set(mode.colors.map((color) => color.hex)).size).toBe(8);
+    }
+  });
+
+  it("uses a neutral, light-to-dark grayscale ramp", () => {
+    const grayscale = COLOR_MODES.find((mode) => mode.id === "grayscale")!;
+    const channels = grayscale.colors.map((color) => {
+      const red = Number.parseInt(color.hex.slice(1, 3), 16);
+      const green = Number.parseInt(color.hex.slice(3, 5), 16);
+      const blue = Number.parseInt(color.hex.slice(5, 7), 16);
+      expect(red).toBe(green);
+      expect(green).toBe(blue);
+      return red;
+    });
+
+    expect(channels[0]).toBe(255);
+    expect(channels[7]).toBe(0);
+    expect(channels.every((value, index) => index === 0 || value < channels[index - 1])).toBe(true);
   });
 });
 

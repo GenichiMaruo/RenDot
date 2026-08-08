@@ -23,8 +23,9 @@ import {
   gridsAreEqual,
   inspectQrLikeData,
   PIXEL_COUNT,
-  restorePixelGrid,
+  restoreQrLikeArtwork,
   toUserMessage,
+  type ColorMode,
   type PixelGrid as PixelGridData,
   type QrLikeData,
 } from "@/lib";
@@ -32,6 +33,7 @@ import { cn } from "@/lib/utils";
 
 type RestoreStepProps = {
   originalGrid: PixelGridData;
+  colorMode: ColorMode;
   data: QrLikeData;
   onReturnToFix: () => void;
   onCompletionChange: (complete: boolean) => void;
@@ -101,10 +103,17 @@ function RestoreDiagnosticsPanel({
   );
 }
 
-export function RestoreStep({ originalGrid, data, onReturnToFix, onCompletionChange }: RestoreStepProps) {
+export function RestoreStep({
+  originalGrid,
+  colorMode,
+  data,
+  onReturnToFix,
+  onCompletionChange,
+}: RestoreStepProps) {
   const [status, setStatus] = useState<RestoreStatus>("idle");
   const [phaseIndex, setPhaseIndex] = useState(-1);
   const [restoredGrid, setRestoredGrid] = useState<PixelGridData | null>(null);
+  const [restoredColorMode, setRestoredColorMode] = useState<ColorMode | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<RestoreDiagnostics | null>(null);
 
@@ -112,6 +121,7 @@ export function RestoreStep({ originalGrid, data, onReturnToFix, onCompletionCha
     onCompletionChange(false);
     setStatus("running");
     setRestoredGrid(null);
+    setRestoredColorMode(null);
     setErrorMessage(null);
     setDiagnostics(null);
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -138,14 +148,15 @@ export function RestoreStep({ originalGrid, data, onReturnToFix, onCompletionCha
 
       setPhaseIndex(2);
       await wait(delay);
-      const grid = restorePixelGrid(data, {
+      const artwork = restoreQrLikeArtwork(data, {
         validateParity: !forceRestore,
         truncateOverflow: forceRestore,
       });
 
       setPhaseIndex(3);
       await wait(delay);
-      setRestoredGrid(grid);
+      setRestoredGrid(artwork.grid);
+      setRestoredColorMode(artwork.colorMode);
       setStatus("success");
       onCompletionChange(true);
     } catch (error) {
@@ -154,7 +165,9 @@ export function RestoreStep({ originalGrid, data, onReturnToFix, onCompletionCha
     }
   };
 
-  const matches = restoredGrid ? gridsAreEqual(originalGrid, restoredGrid) : false;
+  const matches = restoredGrid && restoredColorMode
+    ? restoredColorMode === colorMode && gridsAreEqual(originalGrid, restoredGrid)
+    : false;
 
   return (
     <section className="step-enter">
@@ -315,7 +328,12 @@ export function RestoreStep({ originalGrid, data, onReturnToFix, onCompletionCha
               <CardHeader className="pb-4"><CardTitle>もとの画像</CardTitle></CardHeader>
               <CardContent>
                 <div className="mx-auto w-full max-w-[30rem]">
-                  <PixelGrid grid={originalGrid} readOnly ariaLabel="もとのドット絵" />
+                  <PixelGrid
+                    grid={originalGrid}
+                    colorMode={colorMode}
+                    readOnly
+                    ariaLabel="もとのドット絵"
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -323,14 +341,19 @@ export function RestoreStep({ originalGrid, data, onReturnToFix, onCompletionCha
               <CardHeader className="pb-4"><CardTitle>復元した画像</CardTitle></CardHeader>
               <CardContent>
                 <div className="mx-auto w-full max-w-[30rem] pop-in">
-                  <PixelGrid grid={restoredGrid} readOnly ariaLabel="QRライクデータから復元したドット絵" />
+                  <PixelGrid
+                    grid={restoredGrid}
+                    colorMode={restoredColorMode ?? colorMode}
+                    readOnly
+                    ariaLabel="QRライクデータから復元したドット絵"
+                  />
                 </div>
               </CardContent>
             </Card>
           </div>
 
           <div className="flex justify-center">
-            <Button variant="secondary" onClick={() => { onCompletionChange(false); setStatus("idle"); setPhaseIndex(-1); setRestoredGrid(null); setDiagnostics(null); }}>
+            <Button variant="secondary" onClick={() => { onCompletionChange(false); setStatus("idle"); setPhaseIndex(-1); setRestoredGrid(null); setRestoredColorMode(null); setDiagnostics(null); }}>
               <RotateCcw aria-hidden="true" />
               もう一度復元する
             </Button>
