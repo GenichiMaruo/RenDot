@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import { getColor } from "@/lib/colors";
-import type { ColorId, PixelGrid as PixelGridData } from "@/lib/types";
+import type { ColorId, ColorMode, PixelGrid as PixelGridData } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export type PixelGridCommit = {
@@ -19,6 +19,7 @@ export type PixelGridCommit = {
 
 export type PixelGridProps = {
   grid: PixelGridData;
+  colorMode?: ColorMode;
   /** Required together with onCommit to make the grid paintable. */
   selectedColor?: ColorId;
   /** Called once on pointer release, not once per cell crossed. */
@@ -97,6 +98,7 @@ function getCellLine(startIndex: number, endIndex: number): number[] {
  */
 export function PixelGrid({
   grid,
+  colorMode = "colorful",
   selectedColor,
   onCommit,
   readOnly = false,
@@ -317,7 +319,7 @@ export function PixelGrid({
         >
           {row.map((colorId, columnIndex) => {
             const cellIndex = rowIndex * 8 + columnIndex;
-            const color = getColor(colorId);
+            const color = getColor(colorId, colorMode);
             const isSelected = selectedCellIndex === cellIndex;
             const isHighlighted = highlighted.has(cellIndex);
 

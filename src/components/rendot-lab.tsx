@@ -30,6 +30,7 @@ import {
   cloneGrid,
   createEmptyGrid,
   DATA_BIT_INDICES,
+  DEFAULT_COLOR_MODE,
   encodeEntry,
   encodeRunLength,
   flattenGrid,
@@ -37,22 +38,25 @@ import {
   flipQrLikeBit,
   gridsAreEqual,
   getQrLikeCellInfo,
+  isColorMode,
   validateGrid,
   type ColorId,
+  type ColorMode,
   type PixelGrid,
   type SavedArtwork,
 } from "@/lib";
 
 const STORAGE_KEY = "rendot:workshop:v3";
-const STORAGE_VERSION = 3;
+const STORAGE_VERSION = 4;
 const ARTWORK_STORAGE_KEY = "rendot:artworks:v1";
-const ARTWORK_STORAGE_VERSION = 1;
+const ARTWORK_STORAGE_VERSION = 2;
 const MAX_SAVED_ARTWORKS = 8;
 const LAST_STEP_INDEX = DEFAULT_WORKSHOP_STEPS.length - 1;
 
 type StoredWorkshopState = {
   version: number;
   grid: PixelGrid;
+  colorMode: ColorMode;
   currentStep: number;
   unlockedThrough: number;
   qrFlipHistory: number[];
@@ -61,6 +65,11 @@ type StoredWorkshopState = {
 type StoredArtworkGallery = {
   version: number;
   artworks: SavedArtwork[];
+};
+
+type ArtworkSnapshot = {
+  grid: PixelGrid;
+  colorMode: ColorMode;
 };
 
 function clampStep(value: unknown, fallback = 0): number {
@@ -78,9 +87,10 @@ function gridsMatch(left: PixelGrid, right: PixelGrid): boolean {
 
 export function RenDotLab() {
   const [grid, setGrid] = useState<PixelGrid>(() => createEmptyGrid());
+  const [colorMode, setColorMode] = useState<ColorMode>(DEFAULT_COLOR_MODE);
   const [selectedColor, setSelectedColor] = useState<ColorId>(2);
-  const [past, setPast] = useState<PixelGrid[]>([]);
-  const [future, setFuture] = useState<PixelGrid[]>([]);
+  const [past, setPast] = useState<ArtworkSnapshot[]>([]);
+  const [future, setFuture] = useState<ArtworkSnapshot[]>([]);
   const [currentStep, setCurrentStep] = useState(0);
   const [unlockedThrough, setUnlockedThrough] = useState(0);
   const [selectedCellIndex, setSelectedCellIndex] = useState<number | null>(null);
@@ -102,6 +112,7 @@ export function RenDotLab() {
   const latestStateRef = useRef<StoredWorkshopState>({
     version: STORAGE_VERSION,
     grid: createEmptyGrid(),
+    colorMode: DEFAULT_COLOR_MODE,
     currentStep: 0,
     unlockedThrough: 0,
     qrFlipHistory: [],
@@ -110,10 +121,16 @@ export function RenDotLab() {
 
   const entries = useMemo(() => encodeRunLength(flattenGrid(grid)), [grid]);
   const currentSavedArtworkId = useMemo(
-    () => savedArtworks.find((artwork) => gridsMatch(artwork.grid, grid))?.id ?? null,
-    [grid, savedArtworks],
+    () =>
+      savedArtworks.find(
+        (artwork) => artwork.colorMode === colorMode && gridsMatch(artwork.grid, grid),
+      )?.id ?? null,
+    [colorMode, grid, savedArtworks],
   );
-  const baseQrData = useMemo(() => buildQrLikeData(entries), [entries]);
+  const baseQrData = useMemo(
+    () => buildQrLikeData(entries, { colorMode }),
+    [colorMode, entries],
+  );
   const qrData = useMemo(
     () =>
       qrFlipHistory.reduce(
@@ -159,37 +176,64 @@ export function RenDotLab() {
     setScannerOpen(false);
   }, []);
 
-  const replaceGrid = useCallback(
-    (nextGrid: PixelGrid, previousGrid: PixelGrid = grid) => {
-      if (gridsMatch(previousGrid, nextGrid)) return;
-      setPast((history) => [...history.slice(-39), cloneGrid(previousGrid)]);
+  const replaceArtwork = useCallback(
+    (
+      nextGrid: PixelGrid,
+      nextColorMode: ColorMode = colorMode,
+      previousGrid: PixelGrid = grid,
+      previousColorMode: ColorMode = colorMode,
+    ) => {
+      if (
+        previousColorMode === nextColorMode &&
+        gridsMatch(previousGrid, nextGrid)
+      ) return;
+      setPast((history) => [
+        ...history.slice(-39),
+        { grid: cloneGrid(previousGrid), colorMode: previousColorMode },
+      ]);
       setFuture([]);
       setGrid(cloneGrid(nextGrid));
+      setColorMode(nextColorMode);
       resetDerivedState();
       setSaveStatus("unsaved");
     },
-    [grid, resetDerivedState],
+    [colorMode, grid, resetDerivedState],
+  );
+
+  const replaceGrid = useCallback(
+    (nextGrid: PixelGrid, previousGrid: PixelGrid = grid) => {
+      replaceArtwork(nextGrid, colorMode, previousGrid, colorMode);
+    },
+    [colorMode, grid, replaceArtwork],
   );
 
   const handleUndo = useCallback(() => {
     if (past.length === 0) return;
     const previous = past[past.length - 1];
     setPast((history) => history.slice(0, -1));
-    setFuture((history) => [cloneGrid(grid), ...history].slice(0, 40));
-    setGrid(cloneGrid(previous));
+    setFuture((history) => [
+      { grid: cloneGrid(grid), colorMode },
+      ...history,
+    ].slice(0, 40));
+    setGrid(cloneGrid(previous.grid));
+    setColorMode(previous.colorMode);
     resetDerivedState();
     setSaveStatus("unsaved");
-  }, [grid, past, resetDerivedState]);
+  }, [colorMode, grid, past, resetDerivedState]);
 
   const handleRedo = useCallback(() => {
     if (future.length === 0) return;
     const next = future[0];
     setFuture((history) => history.slice(1));
-    setPast((history) => [...history.slice(-39), cloneGrid(grid)]);
-    setGrid(cloneGrid(next));
+    setPast((history) => [
+      ...history.slice(-39),
+      { grid: cloneGrid(grid), colorMode },
+    ]);
+    setGrid(cloneGrid(next.grid));
+    setColorMode(next.colorMode);
     resetDerivedState();
     setSaveStatus("unsaved");
-  }, [future, grid, resetDerivedState]);
+  }, [colorMode, future, grid, resetDerivedState]);
 
   const persistSavedArtworks = useCallback((artworks: SavedArtwork[]) => {
     const limited = artworks.slice(0, MAX_SAVED_ARTWORKS);
@@ -210,9 +254,9 @@ export function RenDotLab() {
     const id = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     persistSavedArtworks([
       ...savedArtworks,
-      { id, grid: cloneGrid(grid), savedAt: Date.now() },
+      { id, grid: cloneGrid(grid), colorMode, savedAt: Date.now() },
     ]);
-  }, [currentSavedArtworkId, grid, persistSavedArtworks, savedArtworks]);
+  }, [colorMode, currentSavedArtworkId, grid, persistSavedArtworks, savedArtworks]);
 
   const handleDeleteArtwork = useCallback((id: string) => {
     persistSavedArtworks(savedArtworks.filter((artwork) => artwork.id !== id));
@@ -285,6 +329,7 @@ export function RenDotLab() {
       // The app remains usable when private browsing blocks storage.
     }
     setGrid(createEmptyGrid());
+    setColorMode(DEFAULT_COLOR_MODE);
     setSelectedColor(2);
     setPast([]);
     setFuture([]);
@@ -301,7 +346,10 @@ export function RenDotLab() {
         const raw = window.localStorage.getItem(ARTWORK_STORAGE_KEY);
         if (!raw) return;
         const stored = JSON.parse(raw) as Partial<StoredArtworkGallery>;
-        if (stored.version !== ARTWORK_STORAGE_VERSION || !Array.isArray(stored.artworks)) {
+        if (
+          (stored.version !== 1 && stored.version !== ARTWORK_STORAGE_VERSION) ||
+          !Array.isArray(stored.artworks)
+        ) {
           throw new Error("Unsupported artwork storage version");
         }
         const restored = stored.artworks.slice(0, MAX_SAVED_ARTWORKS).map((artwork) => {
@@ -309,9 +357,16 @@ export function RenDotLab() {
             throw new Error("Invalid saved artwork");
           }
           validateGrid(artwork.grid);
+          const restoredColorMode = isColorMode(artwork.colorMode)
+            ? artwork.colorMode
+            : stored.version === 1
+              ? DEFAULT_COLOR_MODE
+              : null;
+          if (!restoredColorMode) throw new Error("Invalid saved artwork color mode");
           return {
             id: artwork.id,
             grid: cloneGrid(artwork.grid),
+            colorMode: restoredColorMode,
             savedAt: artwork.savedAt,
           };
         });
@@ -334,11 +389,12 @@ export function RenDotLab() {
     latestStateRef.current = {
       version: STORAGE_VERSION,
       grid,
+      colorMode,
       currentStep,
       unlockedThrough,
       qrFlipHistory,
     };
-  }, [currentStep, grid, hydrated, qrFlipHistory, unlockedThrough]);
+  }, [colorMode, currentStep, grid, hydrated, qrFlipHistory, unlockedThrough]);
 
   useEffect(() => {
     const flushLatestState = () => {
@@ -369,11 +425,21 @@ export function RenDotLab() {
         const raw = window.localStorage.getItem(STORAGE_KEY);
         if (raw) {
           const stored = JSON.parse(raw) as Partial<StoredWorkshopState>;
-          if (stored.version !== STORAGE_VERSION) throw new Error("Unsupported save version");
+          if (stored.version !== 3 && stored.version !== STORAGE_VERSION) {
+            throw new Error("Unsupported save version");
+          }
           validateGrid(stored.grid);
+          const restoredColorMode = isColorMode(stored.colorMode)
+            ? stored.colorMode
+            : stored.version === 3
+              ? DEFAULT_COLOR_MODE
+              : null;
+          if (!restoredColorMode) throw new Error("Invalid color mode");
           const restoredGrid = cloneGrid(stored.grid);
           const restoredEntries = encodeRunLength(flattenGrid(restoredGrid));
-          const restoredQr = buildQrLikeData(restoredEntries);
+          const restoredQr = buildQrLikeData(restoredEntries, {
+            colorMode: restoredColorMode,
+          });
           const restoredStep = clampStep(stored.currentStep);
           const restoredUnlocked = Math.max(
             restoredStep,
@@ -387,6 +453,7 @@ export function RenDotLab() {
             : [];
 
           setGrid(restoredGrid);
+          setColorMode(restoredColorMode);
           setCurrentStep(restoredStep);
           setUnlockedThrough(restoredUnlocked);
           setQrFlipHistory(restoredFlips);
@@ -421,6 +488,7 @@ export function RenDotLab() {
       const state: StoredWorkshopState = {
         version: STORAGE_VERSION,
         grid,
+        colorMode,
         currentStep,
         unlockedThrough,
         qrFlipHistory,
@@ -434,7 +502,7 @@ export function RenDotLab() {
     }, 180);
 
     return () => window.clearTimeout(timeout);
-  }, [currentStep, grid, hydrated, qrFlipHistory, storageResetToken, unlockedThrough]);
+  }, [colorMode, currentStep, grid, hydrated, qrFlipHistory, storageResetToken, unlockedThrough]);
 
   const renderedStep = (() => {
     switch (currentStep) {
@@ -442,7 +510,11 @@ export function RenDotLab() {
         return (
           <PixelStep
             grid={grid}
+            colorMode={colorMode}
             selectedColor={selectedColor}
+            onColorModeChange={(nextColorMode) => {
+              replaceArtwork(grid, nextColorMode, grid, colorMode);
+            }}
             onSelectedColorChange={setSelectedColor}
             onGridCommit={(commit) => replaceGrid(commit.grid, commit.previousGrid)}
             onUndo={handleUndo}
@@ -454,7 +526,7 @@ export function RenDotLab() {
             savedArtworks={savedArtworks}
             currentSavedArtworkId={currentSavedArtworkId}
             onSaveArtwork={handleSaveArtwork}
-            onLoadArtwork={(artwork) => replaceGrid(artwork.grid)}
+            onLoadArtwork={(artwork) => replaceArtwork(artwork.grid, artwork.colorMode)}
             onDeleteArtwork={handleDeleteArtwork}
           />
         );
@@ -462,6 +534,7 @@ export function RenDotLab() {
         return (
           <NumberStep
             grid={grid}
+            colorMode={colorMode}
             selectedCellIndex={selectedCellIndex}
             onCellSelect={setSelectedCellIndex}
           />
@@ -470,6 +543,7 @@ export function RenDotLab() {
         return (
           <CompressionStep
             grid={grid}
+            colorMode={colorMode}
             entries={entries}
             selectedRunIndex={Math.min(selectedRunIndex, entries.length - 1)}
             onSelectRun={handleRunSelection}
@@ -479,6 +553,7 @@ export function RenDotLab() {
         return (
           <BinaryStep
             entries={entries}
+            colorMode={colorMode}
             selectedRunIndex={Math.min(selectedRunIndex, entries.length - 1)}
             onSelectRun={handleRunSelection}
           />
@@ -487,6 +562,7 @@ export function RenDotLab() {
         return (
           <ParityStep
             entries={entries}
+            colorMode={colorMode}
             selectedRunIndex={Math.min(selectedRunIndex, entries.length - 1)}
             onSelectRun={handleRunSelection}
             demoBits={parityDemoBits}
@@ -529,6 +605,7 @@ export function RenDotLab() {
           <RestoreStep
             key={qrData.fullBits}
             originalGrid={grid}
+            colorMode={colorMode}
             data={qrData}
             onReturnToFix={() => {
               setRestoreCompleted(false);
@@ -609,9 +686,8 @@ export function RenDotLab() {
       <StandaloneScanner
         open={scannerOpen}
         onOpenChange={setScannerOpen}
-        onUseGrid={(scannedGrid) => {
-          replaceGrid(scannedGrid);
-          resetDerivedState();
+        onUseArtwork={(scannedArtwork) => {
+          replaceArtwork(scannedArtwork.grid, scannedArtwork.colorMode);
           announceStepChange();
         }}
       />

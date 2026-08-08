@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import {
+  getColorModeDefinition,
   getQrLikeCellInfo,
   inspectQrLikeData,
   toUserMessage,
@@ -72,6 +73,9 @@ export function QrLikeStep({
   }, [data, selectedIndex]);
   const usedBits = inspection.value?.header.payloadLength ?? null;
   const dummyBits = usedBits === null ? null : 512 - usedBits;
+  const colorModeDefinition = inspection.value
+    ? getColorModeDefinition(inspection.value.header.colorMode)
+    : null;
 
   useEffect(() => {
     if (!expanded) return;
@@ -204,6 +208,7 @@ export function QrLikeStep({
               <CardContent className="space-y-2 pt-5 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">使用データ</span><b>{inspection.value?.payloadBits.length ?? "?"} / 512bit</b></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">ヘッダー</span><b>40bit</b></div>
+                <div className="flex justify-between gap-3"><span className="text-muted-foreground">カラーモード</span><b className="text-right">{colorModeDefinition ? `${colorModeDefinition.name} (${colorModeDefinition.bits})` : "?"}</b></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">ダミー</span><b>{dummyBits ?? "?"}bit</b></div>
                 {usedBits !== null && dummyBits ? <p className="rounded-lg bg-violet-500/10 px-2 py-1.5 text-xs text-violet-700 dark:text-violet-300">payload {usedBits + 1}〜512bit</p> : null}
                 <div className="flex justify-between"><span className="text-muted-foreground">状態</span><b className={inspection.error || !inspection.value?.isParityValid ? "text-destructive" : "text-emerald-600 dark:text-emerald-300"}>{inspection.error ? "ヘッダーエラー" : inspection.value?.isParityValid ? "正常" : "パリティエラー"}</b></div>
@@ -235,13 +240,14 @@ export function QrLikeStep({
               </div>
               {[
                 ["25 × 25", "625マスを余りなく、マーカー36・タイミング37・ヘッダー40・データ512に割り当てます。"],
-                ["ヘッダー40bit", "識別子・まとまり数・データ長・CRCを、配置順の先頭へ記録します。"],
+                ["ヘッダー40bit", "識別子・まとまり数・データ長と色モード・CRCを、配置順の先頭へ記録します。"],
+                ["色モード2bit", colorModeDefinition ? `データ長欄の末尾2bitは ${colorModeDefinition.bits}。${colorModeDefinition.name}として読み取ります。` : "データ長欄の末尾2bitで4種類の色モードを区別します。"],
                 ["縦横1列", "4行目と4列目の白黒交互パターンで、行・列とセル幅を確認します。"],
                 ["4色マーカー", "赤=左上、青=右上、緑=右下、橙=左下。4点から射影変換します。"],
                 ["ジグザグ配置", "右下から2列ずつ読み、上向き・下向きを交互に切り替えます。予約セルは飛ばします。"],
                 ["ダミー範囲", usedBits === null ? "ヘッダーを読めません。" : dummyBits ? `payload ${usedBits + 1}〜512bit（配置 ${41 + usedBits}〜552）です。` : "512bitすべてが実データです。"],
                 ["1まとまり", "個数3bit + P1 + 色3bit + P2 = 8bit。個数000は8です。"],
-                ["検証", "ヘッダーCRCと各3bitの偶数パリティを確認してから復元します。"],
+                ["検証", "色モードを含むヘッダーCRCと、各3bitの偶数パリティを確認してから復元します。"],
               ].map(([title, body]) => <div key={title} className="rounded-2xl border bg-background/60 p-4"><p className="font-black text-primary">{title}</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{body}</p></div>)}
             </div>
           </CardContent>

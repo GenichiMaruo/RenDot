@@ -1,9 +1,16 @@
 import { assertBinaryString, decodeLength, toFixedBinary } from "./binary";
+import {
+  DEFAULT_COLOR_MODE,
+  getColorModeDefinition,
+  getColorModeFromCode,
+} from "./colors";
 import { DataValidationError } from "./errors";
 import { encodeEntry, ENCODED_ENTRY_BIT_COUNT, inspectEncodedEntry } from "./parity";
 import { assertRunLengthTotal, PIXEL_COUNT } from "./runLength";
 import type {
   EncodedEntryInspection,
+  ColorMode,
+  ColorModeCode,
   ParityBlockKey,
   QrLikeCellInfo,
   QrLikeData,
@@ -15,6 +22,8 @@ import type {
 export const QR_LIKE_MAGIC_BITS = "0101001001000100";
 export const QR_LIKE_RUN_COUNT_BITS = 6;
 export const QR_LIKE_PAYLOAD_LENGTH_BITS = 10;
+export const QR_LIKE_COLOR_MODE_BITS = 2;
+export const QR_LIKE_COLOR_MODE_MASK = 0b11;
 export const QR_LIKE_CHECKSUM_BITS = 8;
 export const QR_LIKE_HEADER_LENGTH = 40;
 export const QR_LIKE_PAYLOAD_WIDTH = 16;
@@ -58,24 +67,39 @@ export function calculateCrc8(bits: string): number {
   return crc;
 }
 
-export function buildQrLikeHeader(runCount: number, payloadLength: number): QrLikeHeader {
+export type BuildQrLikeOptions = {
+  colorMode?: ColorMode;
+};
+
+export function buildQrLikeHeader(
+  runCount: number,
+  payloadLength: number,
+  options: BuildQrLikeOptions = {},
+): QrLikeHeader {
   if (!Number.isInteger(runCount) || runCount < 1 || runCount > PIXEL_COUNT) {
     throw new DataValidationError("INVALID_RUN_COUNT", "Run count must be from 1 through 64.");
   }
   if (payloadLength !== runCount * ENCODED_ENTRY_BIT_COUNT) {
     throw new DataValidationError("INVALID_PAYLOAD_LENGTH", "Payload length does not match run count.");
   }
+  const colorMode = options.colorMode ?? DEFAULT_COLOR_MODE;
+  const colorModeDefinition = getColorModeDefinition(colorMode);
+  const packedPayloadLength = payloadLength | colorModeDefinition.code;
   const storedRunCount = runCount - 1;
   const prefix =
     QR_LIKE_MAGIC_BITS +
     toFixedBinary(storedRunCount, QR_LIKE_RUN_COUNT_BITS) +
-    toFixedBinary(payloadLength, QR_LIKE_PAYLOAD_LENGTH_BITS);
+    toFixedBinary(packedPayloadLength, QR_LIKE_PAYLOAD_LENGTH_BITS);
   const checksum = calculateCrc8(prefix);
   const checksumBits = toFixedBinary(checksum, QR_LIKE_CHECKSUM_BITS);
   return {
     magicBits: QR_LIKE_MAGIC_BITS,
+    colorMode,
+    colorModeCode: colorModeDefinition.code,
+    colorModeBits: colorModeDefinition.bits,
     runCount,
     storedRunCount,
+    packedPayloadLength,
     payloadLength,
     checksum,
     checksumBits,
@@ -90,7 +114,11 @@ export function parseQrLikeHeader(bits: string): QrLikeHeader {
   const payloadLengthEnd = runCountEnd + QR_LIKE_PAYLOAD_LENGTH_BITS;
   const magicBits = bits.slice(0, magicEnd);
   const storedRunCount = Number.parseInt(bits.slice(magicEnd, runCountEnd), 2);
-  const payloadLength = Number.parseInt(bits.slice(runCountEnd, payloadLengthEnd), 2);
+  const packedPayloadLength = Number.parseInt(bits.slice(runCountEnd, payloadLengthEnd), 2);
+  const colorModeCode = (packedPayloadLength & QR_LIKE_COLOR_MODE_MASK) as ColorModeCode;
+  const colorMode = getColorModeFromCode(colorModeCode);
+  const colorModeBits = bits.slice(payloadLengthEnd - QR_LIKE_COLOR_MODE_BITS, payloadLengthEnd);
+  const payloadLength = packedPayloadLength & ~QR_LIKE_COLOR_MODE_MASK;
   const checksumBits = bits.slice(payloadLengthEnd);
   const checksum = Number.parseInt(checksumBits, 2);
   const expectedChecksum = calculateCrc8(bits.slice(0, payloadLengthEnd));
@@ -107,7 +135,19 @@ export function parseQrLikeHeader(bits: string): QrLikeHeader {
   if (payloadLength !== runCount * ENCODED_ENTRY_BIT_COUNT || payloadLength > QR_LIKE_PAYLOAD_CAPACITY) {
     throw new DataValidationError("INVALID_PAYLOAD_LENGTH", "Header fields disagree about payload length.");
   }
-  return { magicBits, runCount, storedRunCount, payloadLength, checksum, checksumBits, bits };
+  return {
+    magicBits,
+    colorMode,
+    colorModeCode,
+    colorModeBits,
+    runCount,
+    storedRunCount,
+    packedPayloadLength,
+    payloadLength,
+    checksum,
+    checksumBits,
+    bits,
+  };
 }
 
 export function getQrLikeMarkerColor(column: number, row: number): QrLikeMarkerColor | null {
@@ -181,7 +221,10 @@ function composeQrLikeData(headerBits: string, payloadBits: string): QrLikeData 
   };
 }
 
-export function buildQrLikeData(entries: RunLengthEntry[]): QrLikeData {
+export function buildQrLikeData(
+  entries: RunLengthEntry[],
+  options: BuildQrLikeOptions = {},
+): QrLikeData {
   if (!Array.isArray(entries) || entries.length < 1 || entries.length > PIXEL_COUNT) {
     throw new DataValidationError("INVALID_RUN_COUNT", "QR-like data needs from 1 through 64 runs.");
   }
@@ -194,7 +237,10 @@ export function buildQrLikeData(entries: RunLengthEntry[]): QrLikeData {
     const column = cellIndex % QR_LIKE_DEFAULT_WIDTH;
     return (row + column) % 2 === 0 ? "1" : "0";
   }).join("");
-  return composeQrLikeData(buildQrLikeHeader(entries.length, actualPayload.length).bits, payloadBits);
+  return composeQrLikeData(
+    buildQrLikeHeader(entries.length, actualPayload.length, options).bits,
+    payloadBits,
+  );
 }
 
 export function qrLikeDataFromDisplayBits(displayBits: string): QrLikeData {

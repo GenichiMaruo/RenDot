@@ -18,25 +18,26 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  restorePixelGrid,
+  getColorModeDefinition,
+  restoreQrLikeArtwork,
   toUserMessage,
-  type PixelGrid as PixelGridData,
   type QrLikeData,
+  type RestoredQrLikeArtwork,
 } from "@/lib";
 
 type StandaloneScannerProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onUseGrid: (grid: PixelGridData) => void;
+  onUseArtwork: (artwork: RestoredQrLikeArtwork) => void;
 };
 
-export function StandaloneScanner({ open, onOpenChange, onUseGrid }: StandaloneScannerProps) {
-  const [scannedGrid, setScannedGrid] = useState<PixelGridData | null>(null);
+export function StandaloneScanner({ open, onOpenChange, onUseArtwork }: StandaloneScannerProps) {
+  const [scannedArtwork, setScannedArtwork] = useState<RestoredQrLikeArtwork | null>(null);
   const [scanSession, setScanSession] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const resetPreview = () => {
-    setScannedGrid(null);
+    setScannedArtwork(null);
     setErrorMessage(null);
     setScanSession((value) => value + 1);
   };
@@ -48,7 +49,7 @@ export function StandaloneScanner({ open, onOpenChange, onUseGrid }: StandaloneS
 
   const handleDecoded = (data: QrLikeData) => {
     try {
-      setScannedGrid(restorePixelGrid(data));
+      setScannedArtwork(restoreQrLikeArtwork(data));
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(toUserMessage(error));
@@ -57,8 +58,8 @@ export function StandaloneScanner({ open, onOpenChange, onUseGrid }: StandaloneS
   };
 
   const useScannedGrid = () => {
-    if (!scannedGrid) return;
-    onUseGrid(scannedGrid);
+    if (!scannedArtwork) return;
+    onUseArtwork(scannedArtwork);
     handleOpenChange(false);
   };
 
@@ -77,13 +78,23 @@ export function StandaloneScanner({ open, onOpenChange, onUseGrid }: StandaloneS
           </AlertDialogDescription>
         </AlertDialogHeader>
 
-        {scannedGrid ? (
+        {scannedArtwork ? (
           <div className="grid gap-4 sm:grid-cols-[minmax(15rem,1fr)_minmax(12rem,.75fr)] sm:items-center">
             <div className="mx-auto w-full max-w-[28rem] rounded-2xl border bg-background/60 p-3">
-              <PixelGrid grid={scannedGrid} readOnly ariaLabel="読み取ったドット絵の一時プレビュー" />
+              <PixelGrid
+                grid={scannedArtwork.grid}
+                colorMode={scannedArtwork.colorMode}
+                readOnly
+                ariaLabel="読み取ったドット絵の一時プレビュー"
+              />
             </div>
             <div className="space-y-3">
-              <Badge variant="secondary">未反映</Badge>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="secondary">未反映</Badge>
+                <Badge variant="outline">
+                  {getColorModeDefinition(scannedArtwork.colorMode).name}
+                </Badge>
+              </div>
               <div>
                 <h3 className="text-lg font-black">読み取った絵</h3>
                 <p className="mt-1 text-sm leading-6 text-muted-foreground">
@@ -110,7 +121,7 @@ export function StandaloneScanner({ open, onOpenChange, onUseGrid }: StandaloneS
 
         <AlertDialogFooter>
           <AlertDialogCancel>閉じる</AlertDialogCancel>
-          {scannedGrid ? (
+          {scannedArtwork ? (
             <AlertDialogAction
               className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={useScannedGrid}

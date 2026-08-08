@@ -13,10 +13,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { getColor, toBinaryRunLengthEntry } from "@/lib";
-import type { RunLengthEntry } from "@/lib";
+import type { ColorMode, RunLengthEntry } from "@/lib";
 
 export type BinaryStepProps = {
   entries: RunLengthEntry[];
+  colorMode: ColorMode;
   selectedRunIndex: number;
   onSelectRun: (index: number) => void;
 };
@@ -45,6 +46,7 @@ function BitCells({ bits, label }: { bits: string; label: string }) {
 
 export function BinaryStep({
   entries,
+  colorMode,
   selectedRunIndex,
   onSelectRun,
 }: BinaryStepProps) {
@@ -118,7 +120,7 @@ export function BinaryStep({
               >
                 {entries.map((entry, index) => {
                   const binary = toBinaryRunLengthEntry(entry);
-                  const color = getColor(entry.color);
+                  const color = getColor(entry.color, colorMode);
                   const isSelected = safeIndex === index;
                   const accessibleLabel = [
                     `まとまり${index + 1}`,
@@ -184,7 +186,7 @@ export function BinaryStep({
           {(() => {
             const entry = entries[safeIndex];
             const binary = toBinaryRunLengthEntry(entry);
-            const color = getColor(entry.color);
+            const color = getColor(entry.color, colorMode);
 
             return (
               <Card className="overflow-hidden lg:sticky lg:top-4">

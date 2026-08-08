@@ -10,11 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  COLORS,
   flattenGrid,
+  getColors,
   getPixelRangeForRun,
   getRunIndexAtPixel,
   toBinaryRunLengthEntry,
+  type ColorMode,
   type PixelGrid as PixelGridData,
   type RunLengthEntry,
 } from "@/lib";
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 
 type CompressionStepProps = {
   grid: PixelGridData;
+  colorMode: ColorMode;
   entries: RunLengthEntry[];
   selectedRunIndex: number;
   onSelectRun: (index: number) => void;
@@ -60,10 +62,12 @@ function MetricCard({
 
 export function CompressionStep({
   grid,
+  colorMode,
   entries,
   selectedRunIndex,
   onSelectRun,
 }: CompressionStepProps) {
+  const colors = getColors(colorMode);
   const [scanIndex, setScanIndex] = useState<number | null>(null);
   const [scanSpeed, setScanSpeed] = useState<(typeof SCAN_SPEEDS)[number]["id"]>("normal");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -191,6 +195,7 @@ export function CompressionStep({
             <div className="mx-auto w-full max-w-[30rem]">
               <PixelGrid
                 grid={grid}
+                colorMode={colorMode}
                 readOnly
                 highlightedIndices={highlightedIndices}
                 selectedCellIndex={scanIndex ?? undefined}
@@ -200,7 +205,7 @@ export function CompressionStep({
             </div>
             <div className="mt-4 rounded-2xl bg-primary/8 p-3 text-sm leading-6">
               選択中：<strong>#{selectedRunIndex + 1}</strong> ・{" "}
-              <strong>{COLORS[entries[selectedRunIndex].color].name} × {entries[selectedRunIndex].length}</strong>
+              <strong>{colors[entries[selectedRunIndex].color].name} × {entries[selectedRunIndex].length}</strong>
               <span className="ml-1 text-muted-foreground">（{range.start + 1}〜{range.end + 1}マス目）</span>
             </div>
           </CardContent>
@@ -226,10 +231,10 @@ export function CompressionStep({
                   <span className="font-mono text-xs text-muted-foreground">#{index + 1}</span>
                   <span
                     className="size-5 rounded-md border border-black/15 shadow-sm dark:border-white/30"
-                    style={{ backgroundColor: COLORS[entry.color].hex }}
+                    style={{ backgroundColor: colors[entry.color].hex }}
                     aria-hidden="true"
                   />
-                  {COLORS[entry.color].name} × {entry.length}
+                  {colors[entry.color].name} × {entry.length}
                 </button>
               ))}
             </div>
@@ -340,7 +345,7 @@ export function CompressionStep({
               <span
                 key={index}
                 className="grid aspect-square min-h-7 place-items-center rounded-lg border border-black/10 font-mono text-xs font-black sm:text-sm"
-                style={{ backgroundColor: COLORS[color].hex, color: COLORS[color].foreground }}
+                style={{ backgroundColor: colors[color].hex, color: colors[color].foreground }}
               >
                 {color}
               </span>

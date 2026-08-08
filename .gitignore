@@ -34,3 +34,5 @@ next-env.d.ts
 # local visual checks
 /.artifacts
 /.edge-test
+
+/mds

@@ -16,7 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { COLORS, type SavedArtwork } from "@/lib";
+import { getColor, getColorModeDefinition, type SavedArtwork } from "@/lib";
 
 type SavedArtworkGalleryProps = {
   artworks: readonly SavedArtwork[];
@@ -30,7 +30,11 @@ function ArtworkPreview({ artwork }: { artwork: SavedArtwork }) {
   return (
     <div className="grid aspect-square w-full grid-cols-8 overflow-hidden rounded-xl border-2 border-border bg-white shadow-sm">
       {artwork.grid.flat().map((color, index) => (
-        <span key={index} aria-hidden="true" style={{ backgroundColor: COLORS[color].hex }} />
+        <span
+          key={index}
+          aria-hidden="true"
+          style={{ backgroundColor: getColor(color, artwork.colorMode).hex }}
+        />
       ))}
     </div>
   );
@@ -84,6 +88,9 @@ export function SavedArtworkGallery({
                   <div className="mt-3 flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-black">{title}</p>
+                      <p className="truncate text-xs font-bold text-muted-foreground">
+                        {getColorModeDefinition(artwork.colorMode).name}
+                      </p>
                       {isCurrent ? <Badge variant="success" className="mt-1">編集中</Badge> : null}
                     </div>
                     <AlertDialog>
